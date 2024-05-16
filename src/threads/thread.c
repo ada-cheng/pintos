@@ -11,8 +11,10 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
+
 #endif
 
 /** Random value for struct thread's `magic' member.
@@ -36,6 +38,8 @@ static struct thread *initial_thread;
 
 /** Lock used by allocate_tid(). */
 static struct lock tid_lock;
+
+
 
 /** Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -92,12 +96,15 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  lock_init(&file_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+ 
 }
 
 /** Starts preemptive thread scheduling by enabling interrupts.
@@ -182,6 +189,17 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+
+  t->child = malloc(sizeof(struct child_entry));
+  t->child->tid = tid;
+  t->child->t = t;
+  t->child->is_alive = true;
+  
+  
+  t->child->exit_status = 0;
+  t->child->is_waited = false;
+  sema_init(&t->child->sema_success, 0);
+  list_push_back(&thread_current()->children, &t->child->elem);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -289,9 +307,55 @@ thread_exit (void)
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
+  
+  printf("%s: exit(%d)\n", thread_current()->name, thread_current()->exit_status);
+  //thread_current()->child->exit_status = thread_current()->exit_status;
+  //sema_up(&thread_current()->child->sema_success);
+
+  while (!list_empty(&thread_current()->files))
+  {
+    struct list_elem *e = list_pop_front(&thread_current()->files);
+    struct file_entry *fe = list_entry(e, struct file_entry, e);
+    lock_acquire(&file_lock);
+    file_close(fe->file);
+    lock_release(&file_lock);
+    free(fe);
+  }
+
+  if (thread_current()->parent == NULL)
+  {
+    free(thread_current()->child);
+  }
+  else
+  {
+    thread_current()->child->exit_status = thread_current()->exit_status;
+    //printf("tid : %d\n", thread_current()->child->tid);
+    if (thread_current()->child->is_waited)
+    {
+      sema_up(&thread_current()->child->sema_success);
+    }
+    thread_current()->child->is_alive = false;
+    thread_current()->child->t = NULL;
+  }
+
+
+  for (struct list_elem * e = list_begin(&thread_current()->files); e != list_end(&thread_current()->files); e = list_next(e))
+  {
+    struct file_entry *fe = list_entry(e, struct file_entry, e);
+
+    lock_acquire(&file_lock);
+    file_close(fe->file);
+    lock_release(&file_lock);
+    list_remove(e);
+    free(fe);
+  }
+  //free(e);
+
+
   intr_disable ();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
+  
   schedule ();
   NOT_REACHED ();
 }
@@ -463,6 +527,25 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->exit_status = UINT32_MAX;
+
+  t->fd = 2;
+  list_init(&t->files);
+  list_init(&t->children);
+
+  if (t!= initial_thread)
+  {
+    t->parent = thread_current();
+  }
+  else
+  {
+    t->parent = NULL;
+  }
+  
+
+  sema_init(&t->sema_success, 0);
+  t->exec_success = false;
+
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

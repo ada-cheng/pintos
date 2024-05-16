@@ -37,6 +37,8 @@
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
+#include "vm/frame.h"
+#include "vm/swap.h"
 
 /** Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
@@ -114,7 +116,7 @@ pintos_init (void)
   exception_init ();
   syscall_init ();
 #endif
-
+  lru_list_init();
   /* Start thread scheduler and enable interrupts. */
   thread_start ();
   serial_init_queue ();
@@ -126,7 +128,7 @@ pintos_init (void)
   locate_block_devices ();
   filesys_init (format_filesys);
 #endif
-
+  swap_init ();
   printf ("Boot complete.\n");
   
   if (*argv != NULL) {

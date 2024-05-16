@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <threads/synch.h>
+#include "lib/kernel/hash.h"
 
 /** States in a thread's life cycle. */
 enum thread_status
@@ -80,6 +82,25 @@ typedef int tid_t;
    only because they are mutually exclusive: only a thread in the
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
+struct child_entry{
+  tid_t tid;
+  struct list_elem elem;
+  int exit_status;
+  bool is_waited;
+  struct semaphore sema_success;
+  bool is_alive;
+  struct thread* t;
+};
+
+struct file_entry
+{
+   int fd;
+   struct file* file;
+   struct list_elem e;
+};
+
+struct lock file_lock;
+
 struct thread
   {
     /* Owned by thread.c. */
@@ -92,14 +113,37 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /**< List element. */
+    int exit_status; 
+    struct semaphore sema_success;
+    bool exec_success;
+    struct thread* parent;
+    
+   struct list children;
+   struct child_entry* child;
+ 
+   struct list files;
+   struct file* self_file;
+   int fd;
+   
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
+
 #endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /**< Detects stack overflow. */
+
+
+   /* Project 4 */
+   //현재 쓰레드가 가지고 있는 spe_entry들을 hash table 형태로 저장
+   struct hash spt;
+
+   // 메모리 매핑된 파일 관리 정보
+   struct list mmap_list;
+   // mmaping 된 파일 수
+   int next_mapid;
   };
 
 /** If false (default), use round-robin scheduler.

@@ -4,7 +4,15 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/syscall.h"
+#include <debug.h>
+#include "userprog/process.h"
+#include "vm/frame.h"
+#include "threads/palloc.h"
 
+
+#define STK_MAX 0xBF800000
 /** Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -108,6 +116,15 @@ kill (struct intr_frame *f)
     }
 }
 
+
+
+bool verify_stack(void* fault_addr, void* esp){
+   if(!is_user_vaddr(fault_addr)) return false;
+   if(STK_MAX > fault_addr) return false;
+   if(esp -fault_addr > 32) return false;
+   return true;
+}
+
 /** Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -119,6 +136,15 @@ kill (struct intr_frame *f)
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
+void exit(int status){
+
+  struct thread *cur = thread_current();
+
+  cur -> exit_status = status;
+  thread_exit();
+}
+
+
 static void
 page_fault (struct intr_frame *f) 
 {
@@ -148,14 +174,29 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+  
+   if(!is_user_vaddr(fault_addr)){
+      exit(-1);
+   }
+
+   if (!not_present)
+      exit(-1);
+      
+   
+   struct spt_entry *spe;
+
+   spe = find_spe (fault_addr);
+   if (!spe)
+      {  
+         if(!verify_stack(fault_addr, f->esp))
+            exit(-1);
+        
+         return ;
+      }
+   if (!handle_mm_fault (spe)){
+      printf("handle mm fault failed\n");
+      exit(-1);
+   }
+
 }
 
