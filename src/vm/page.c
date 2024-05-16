@@ -7,7 +7,7 @@
 #include "vm/frame.h"
 #include "userprog/pagedir.h"
 
-extern struct lock filesys_lock;
+extern struct lock file_lock;
 struct spt_entry *find_spe(void *vaddr);
 
 
@@ -40,7 +40,7 @@ bool insert_spe(struct hash *spt, struct spt_entry *spe)
 
 }
 
-bool delete_spe(struct hash *spt, struct spt_entry *spe)
+bool remove_spe(struct hash *spt, struct spt_entry *spe)
 {
     ASSERT (spt != NULL);
     ASSERT (spe != NULL);
@@ -58,7 +58,7 @@ struct spt_entry *find_spe(void *vaddr)
 }
 
 
-void spt_destroy(struct hash *spt){
+void destroy_spt(struct hash *spt){
     ASSERT(spt!=NULL);
     hash_destroy(spt, spt_destroy_func);
 }
@@ -81,14 +81,18 @@ void spt_destroy_func (struct hash_elem *e, void *aux UNUSED)
 
 bool load_file(void* kaddr, struct spt_entry *spe)
 {
-    lock_acquire(&filesys_lock);
+
+    ASSERT(spe->type == BIN || spe->type == FILE);
+    bool success = false;
+    lock_acquire(&file_lock);
+
     file_seek(spe->file, spe->offset);
-    if(file_read(spe->file, kaddr, spe->read_bytes) != (int) spe->read_bytes)
+    if(file_read(spe->file, kaddr, spe->read_bytes) == (int) spe->read_bytes)
     {
-        lock_release(&filesys_lock);
-        return false;
-    }
-    lock_release(&filesys_lock);
     memset(kaddr + spe->read_bytes, 0, spe->zero_bytes);
-    return true;
+    success = true;
+    }
+
+    lock_release(&file_lock);
+    return success;
 }

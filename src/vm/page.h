@@ -7,17 +7,11 @@
 #include <list.h>
 #include "threads/vaddr.h"
 
-#define VM_BIN 0
-#define VM_FILE 1
-#define VM_ANON 2
+#define BIN 0
+#define FILE 1
+#define ANON 2
 
 
-struct mmap_file{ 
-    int mapid; 
-    struct file* file; 
-    struct list_elem elem; 
-    struct list spe_list; 
-};
 
 struct page{
     void *kaddr; 
@@ -54,9 +48,9 @@ bool spt_less_func(const struct hash_elem *a, const struct hash_elem *b, void* a
 
 bool insert_spe(struct hash *spt, struct spt_entry *spe);
 
-bool delete_spe(struct hash *spt, struct spt_entry *spe);
+bool remove_spe(struct hash *spt, struct spt_entry *spe);
 
-void spt_destroy(struct hash *spt);
+void destroy_spt(struct hash *spt);
 
 void spt_destroy_func (struct hash_elem *e, void *aux UNUSED);
 

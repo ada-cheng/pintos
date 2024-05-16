@@ -225,7 +225,7 @@ process_exit (void)
     file_close(cur->self_file);
   }
   lock_release(&file_lock);
-  spt_destroy(&(cur->spt));
+  destroy_spt(&(cur->spt));
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -536,7 +536,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
       
       memset (spe, 0, sizeof (struct spt_entry));
-      spe->type = VM_BIN;
+      spe->type = BIN;
       spe->file = open_file;
       spe->offset = ofs;
       spe->read_bytes = page_read_bytes;
@@ -583,13 +583,13 @@ setup_stack (void **esp)
     }
 
   
-    spe->type = VM_ANON;
+    spe->type = ANON;
     spe->writable = true;
     spe->is_loaded = true;
     spe->vaddr = pg_round_down(((uint8_t *) PHYS_BASE) - PGSIZE);
     kpage->spe = spe;
     insert_spe(&(thread_current()->spt), kpage->spe);
-    add_page_to_lru_list(kpage);
+    add_page_to_spe(kpage);
    
 
   return success;
@@ -615,7 +615,7 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-bool handle_mm_fault(struct spt_entry *spe){
+bool page_fault_handle(struct spt_entry *spe){
  
 
    struct page* kpage;
@@ -635,7 +635,7 @@ bool handle_mm_fault(struct spt_entry *spe){
 	}
 
    switch(spe->type){
-      case VM_BIN:
+      case BIN: // BIN type, we need to load the data from the file and set the page to be loaded
     
        if (!load_file (kpage->kaddr, spe))
           {
@@ -645,7 +645,7 @@ bool handle_mm_fault(struct spt_entry *spe){
           }
           spe->is_loaded = true;
          break;
-      case VM_FILE:
+      case FILE: // FILE type, we need to load the data from the file 
   
        if (!load_file (kpage->kaddr, spe))
           {
@@ -655,14 +655,14 @@ bool handle_mm_fault(struct spt_entry *spe){
           }
           
          break;
-      case VM_ANON:
+      case ANON: // ANON type, we need to swap in the data from the swap slot
 
           swap_in(spe->swap_slot, kpage->kaddr);
           spe->is_loaded = true;
      
          break;
       default:
-        printf("was it default?\n");
+
         return false;
    }
 
@@ -672,11 +672,11 @@ bool handle_mm_fault(struct spt_entry *spe){
     free_page (kpage->kaddr);
     return false;
   }
-  // set is_loaded status to true
+
   spe->is_loaded = true;
   kpage->spe = spe;
-  // add to lru list
-  add_page_to_lru_list(kpage);
+
+  add_page_to_spe(kpage);
 
    return true;
 }

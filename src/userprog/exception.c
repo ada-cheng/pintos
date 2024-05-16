@@ -117,14 +117,6 @@ kill (struct intr_frame *f)
 }
 
 
-
-bool verify_stack(void* fault_addr, void* esp){
-   if(!is_user_vaddr(fault_addr)) return false;
-   if(STK_MAX > fault_addr) return false;
-   if(esp -fault_addr > 32) return false;
-   return true;
-}
-
 /** Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -183,18 +175,14 @@ page_fault (struct intr_frame *f)
       exit(-1);
       
    
-   struct spt_entry *spe;
-
-   spe = find_spe (fault_addr);
+   struct spt_entry *spe = find_spe(fault_addr);
    if (!spe)
       {  
-         if(!verify_stack(fault_addr, f->esp))
-            exit(-1);
-        
-         return ;
+         exit(-1);
+
       }
-   if (!handle_mm_fault (spe)){
-      printf("handle mm fault failed\n");
+   if (!page_fault_handle(spe)){
+      printf("page fault handle failed\n");
       exit(-1);
    }
 
