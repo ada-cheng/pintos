@@ -55,5 +55,19 @@
   "C_Cpp_Runner.useLeakSanitizer": false,
   "C_Cpp_Runner.showCompilationTime": false,
   "C_Cpp_Runner.useLinkTimeOptimization": false,
-  "C_Cpp_Runner.msvcSecureNoWarnings": false
+  "C_Cpp_Runner.msvcSecureNoWarnings": false,
+  "files.associations": {
+    "swap.h": "c",
+    "frame.h": "c",
+    "page.h": "c",
+    "thread.h": "c",
+    "palloc.h": "c",
+    "pagedir.h": "c",
+    "synch.h": "c",
+    "filesys.h": "c",
+    "file.h": "c",
+    "syscall.h": "c",
+    "cstdlib": "c",
+    "*.inc": "c"
+  }
 }

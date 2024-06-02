@@ -4,7 +4,7 @@
 
 >Fill in your name and email address.
 
-FirstName LastName <email@domain.example>
+Xinle Cheng <adacheng@stu.pku.edu.cn>
 
 >If you have any preliminary comments on your submission, notes for the TAs, please give them here.
 
@@ -22,6 +22,14 @@ FirstName LastName <email@domain.example>
 >invalid virtual address should cause the stack to be extended into
 >the page that faulted.
 
+I use `if (is_stack_access(f->esp,fault_addr))` in `exception.c`.
+
+```cpp
+bool is_stack_access(int esp, int upage){
+ return (upage < PHYS_BASE) && (upage >= esp - 32) && (upage >= STK_MAX);
+ }
+```
+
 
 
 ## Memory Mapped Files
@@ -29,6 +37,15 @@ FirstName LastName <email@domain.example>
 #### DATA STRUCTURES
 
 >B1: Copy here the declaration of each new or changed struct or struct member, global or static variable, typedef, or enumeration.  Identify the purpose of each in 25 words or less.
+
+```cpp
+struct mmap_entry{
+    int mapid;
+    struct file* file;
+    struct list_elem elem;
+    struct list spte_list;
+};
+```
 
 
 

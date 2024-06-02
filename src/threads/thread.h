@@ -137,13 +137,12 @@ struct thread
 
 
    /* Project 4 */
-   //현재 쓰레드가 가지고 있는 spe_entry들을 hash table 형태로 저장
+
    struct hash spt;
 
-   // 메모리 매핑된 파일 관리 정보
    struct list mmap_list;
-   // mmaping 된 파일 수
-   int next_mapid;
+
+   int mapid;
   };
 
 /** If false (default), use round-robin scheduler.

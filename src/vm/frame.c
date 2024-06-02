@@ -26,7 +26,7 @@ void lru_list_init(){
 }
 
 
-struct page* alloc_page_frame(enum palloc_flags flags) // allocate a frame for a page
+struct frame* alloc_page_frame(enum palloc_flags flags) // allocate a frame for a page
 {
     void* kaddr = palloc_get_page(flags);
     if (kaddr == NULL) {
@@ -35,21 +35,21 @@ struct page* alloc_page_frame(enum palloc_flags flags) // allocate a frame for a
         if (kaddr == NULL) return NULL;
     }
 
-    struct page* frame = (struct page*)malloc(sizeof(struct page));
-    if (!frame) {
+    struct frame* f = (struct page*)malloc(sizeof(struct frame));
+    if (!f) {
         palloc_free_page(kaddr);
         return NULL;
     }
 
-    memset(frame, 0, sizeof(struct page));
-    frame->t = thread_current();
-    frame->kaddr = kaddr;
+    memset(f, 0, sizeof(struct frame));
+    f->t = thread_current();
+    f->kaddr = kaddr;
 
-    return frame;
+    return f;
 }
 
 
-void add_page_to_spe(struct page* page) // add a page to the lru list
+void add_page_to_spe(struct frame* page) // add a page to the lru list
 {
   ASSERT (page);
   lock_acquire(&vm_lock);
@@ -60,16 +60,16 @@ void add_page_to_spe(struct page* page) // add a page to the lru list
 
 
 
-struct page* get_page(void *kaddr) // get a page with a kernel address
+struct frame* get_page(void *kaddr) // get a page with a kernel address
 {
     ASSERT(pg_ofs(kaddr) == 0);
 
-    struct page* temp = NULL;
+    struct frame* temp = NULL;
     struct list_elem* e;
 
     lock_acquire(&vm_lock);
     for (e = list_begin(&lru_list); e != list_end(&lru_list); e = list_next(e)) {
-        temp = list_entry(e, struct page, lru);
+        temp = list_entry(e, struct frame, lru);
         if (temp->kaddr == kaddr) break;
         temp = NULL;
     }
@@ -81,7 +81,7 @@ struct page* get_page(void *kaddr) // get a page with a kernel address
 
 void free_page(void* kaddr){ // free a page with a kernel address
 
-    struct page* page = get_page(kaddr);
+    struct frame* page = get_page(kaddr);
     ASSERT(page!=NULL);
     lock_acquire(&vm_lock);
     if (lru_clock == &page->lru)
@@ -118,14 +118,14 @@ static struct list_elem* next_ele_in_LRU(void){ // get the next lru clock by ite
 void evict_pages(void) { // try to free pages by iterating the lru list and checking the accessed bit
     ASSERT(!list_empty(&lru_list));
 
-    struct page* page;
+    struct frame* page;
     struct list_elem* elem;
 
     lock_acquire(&vm_lock);
 
     while (1) {
         elem = next_ele_in_LRU();
-        page = list_entry(elem, struct page, lru);
+        page = list_entry(elem, struct frame, lru);
 
         if (pagedir_is_accessed(page->t->pagedir, page->spe->vaddr)) {
             pagedir_set_accessed(page->t->pagedir, page->spe->vaddr, false);

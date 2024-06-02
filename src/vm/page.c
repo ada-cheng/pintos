@@ -87,6 +87,9 @@ bool load_file(void* kaddr, struct spt_entry *spe)
     lock_acquire(&file_lock);
 
     file_seek(spe->file, spe->offset);
+   
+                              
+
     if(file_read(spe->file, kaddr, spe->read_bytes) == (int) spe->read_bytes)
     {
     memset(kaddr + spe->read_bytes, 0, spe->zero_bytes);

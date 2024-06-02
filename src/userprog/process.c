@@ -218,6 +218,7 @@ process_exit (void)
 {
 
   struct thread *cur = thread_current ();
+  munmap(-1);
   lock_acquire(&file_lock);
   if(cur->self_file != NULL)
   {
@@ -225,6 +226,7 @@ process_exit (void)
     file_close(cur->self_file);
   }
   lock_release(&file_lock);
+  
   destroy_spt(&(cur->spt));
   uint32_t *pd;
 
@@ -561,7 +563,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  struct page *kpage;
+  struct frame *kpage;
   bool success = false;
 
   struct spt_entry *spe = (struct spt_entry*)malloc(sizeof(struct spt_entry));
@@ -595,6 +597,44 @@ setup_stack (void **esp)
   return success;
 }
 
+
+
+bool stack_growth(void *fault_addr){ // allocate a new page for the stack
+  struct spt_entry *spe = (struct spt_entry*)malloc(sizeof(struct spt_entry));
+  if(spe == NULL)
+    return false;
+
+  struct frame *kpage = alloc_page_frame(PAL_USER | PAL_ZERO);
+
+
+  bool success = false;
+
+  if (kpage!=NULL)
+  {
+    kpage->spe = spe;
+    success = install_page(pg_round_down(fault_addr), kpage->kaddr, true);
+    if (!success)
+    {
+
+      free_page(kpage->kaddr);
+      free(spe);
+      return false;
+    }
+  
+  }
+  spe->type = ANON;
+  spe->writable = true;
+  spe->is_loaded = true;
+  spe->vaddr = pg_round_down(fault_addr);
+  kpage->spe = spe;
+  insert_spe(&(thread_current()->spt), spe);
+  add_page_to_spe(kpage); // use spe to add the page to the lru list
+
+  return success;
+}
+
+
+
 /** Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;
@@ -618,7 +658,7 @@ install_page (void *upage, void *kpage, bool writable)
 bool page_fault_handle(struct spt_entry *spe){
  
 
-   struct page* kpage;
+   struct frame* kpage;
 
 
    kpage = alloc_page_frame(PAL_USER);

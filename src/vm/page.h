@@ -12,13 +12,13 @@
 #define ANON 2
 
 
-
-struct page{
-    void *kaddr; 
-    struct spt_entry *spe; 
-    struct thread *t; 
-    struct list_elem lru; 
+struct mmap_entry{
+    int mapid;
+    struct file* file;
+    struct list_elem elem;
+    struct list spte_list;
 };
+
 
 struct spt_entry{
 

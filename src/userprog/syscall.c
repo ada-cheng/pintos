@@ -8,6 +8,7 @@
 #include "threads/thread.h"
 #include "lib/kernel/stdio.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
 #define SYSCALL_NUMBER 20
 
 static void syscall_handler (struct intr_frame *);
@@ -26,7 +27,8 @@ void syscall_read(struct intr_frame *f);
 void syscall_seek(struct intr_frame *f);
 void syscall_tell(struct intr_frame *f);
 void syscall_close(struct intr_frame *f);
-
+void syscall_mmap(struct intr_frame *f);
+void syscall_munmap(struct intr_frame *f);
 
 /* Reads a byte at user virtual address UADDR.
    UADDR must be below PHYS_BASE.
@@ -129,7 +131,6 @@ static void * check_size(const void *vaddr, unsigned size)
 }
 
 
-
 void syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
@@ -148,6 +149,8 @@ void syscall_init (void)
   syscall_table[SYS_SEEK] = syscall_seek;
   syscall_table[SYS_TELL] = syscall_tell;
   syscall_table[SYS_CLOSE] = syscall_close;
+  syscall_table[SYS_MMAP] = syscall_mmap;
+  syscall_table[SYS_MUNMAP] = syscall_munmap;
  
 
 }
@@ -423,4 +426,154 @@ void syscall_close(struct intr_frame* f)
         }
     }
     lock_release(&file_lock);
+}
+
+
+
+
+int mmap(int fd, void* addr){
+
+  struct mmap_entry *mmap_file;
+  size_t offset = 0;
+
+  if (pg_ofs(addr) != 0)
+    return -1;
+  if (!addr)
+    return -1;
+  if (!is_user_vaddr(addr))
+    return -1;
+  mmap_file = (struct mmap_file *)malloc (sizeof (struct mmap_entry));
+  if (mmap_file == NULL)
+    return -1;
+  memset (mmap_file, 0, sizeof(struct mmap_entry));
+  list_init (&mmap_file->spte_list);
+  for (struct list_elem *e = list_begin (&thread_current ()->files); e != list_end (&thread_current ()->files); e = list_next (e))
+  { // find the file
+    if (list_entry (e, struct file_entry, e)->fd == fd)
+    {
+      struct file *file_ = list_entry (e, struct file_entry, e)->file;
+      mmap_file->file = file_;
+      break;
+    }
+  } 
+  if (mmap_file->file == NULL)
+    return -1;
+  mmap_file->file = file_reopen (mmap_file->file);
+  mmap_file->mapid = thread_current ()->mapid++;
+  list_push_back (&thread_current ()->mmap_list, &mmap_file->elem);
+
+  int len_file = file_length (mmap_file->file);
+  while (len_file > 0) // write the file to the memory
+    {
+      if (find_spe (addr))
+        return -1;
+
+      struct spt_entry *spe = (struct spt_entry *)malloc (sizeof (struct spt_entry));
+      memset (spe, 0, sizeof (struct spt_entry));
+      spe->type = FILE;
+      spe->writable = true;
+      spe->vaddr = addr;
+      spe->offset = offset;
+      spe->read_bytes = len_file >= PGSIZE ? PGSIZE : len_file;
+      spe->zero_bytes = PGSIZE - spe->read_bytes;
+      spe->file = mmap_file->file;
+      insert_spe (&thread_current ()->spt, spe);
+      list_push_back (&mmap_file->spte_list, &spe->mmap_elem);
+      addr += PGSIZE;
+      offset += PGSIZE;
+      len_file -= PGSIZE;
+    }
+  return mmap_file->mapid;
+}
+
+
+
+void syscall_mmap(struct intr_frame *f)
+{
+  check_address(f->esp + 4);
+  check_address(f->esp + 8);
+  f->eax = mmap(*(int *)(f->esp + 4), *(void **)(f->esp + 8));
+}
+
+
+void munmap(int mapid){
+  struct mmap_entry *mmap_entry = NULL;
+  for (struct list_elem *e = list_begin(&thread_current()->mmap_list); e != list_end(&thread_current()->mmap_list); e = list_next(e))
+  { //iterate through the mmap_list, to find the mmap_entry
+    mmap_entry = list_entry(e, struct mmap_entry, elem);
+    if (mapid == -1)
+    {
+        for (struct list_elem *e = list_begin(&mmap_entry->spte_list); e != list_end(&mmap_entry->spte_list); e = list_next(e))
+        { //iterate through the spte_list, to free the pages
+            struct spt_entry *spe = list_entry(e, struct spt_entry, mmap_elem);
+            if (spe->is_loaded)
+            {
+                if (pagedir_is_dirty(thread_current()->pagedir, spe->vaddr))
+                {
+                    lock_acquire(&file_lock);
+                    file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
+                    lock_release(&file_lock);
+                    spe->is_loaded = false;
+                }
+                free_page(pagedir_get_page(thread_current()->pagedir, spe->vaddr));
+                pagedir_clear_page(thread_current()->pagedir, spe->vaddr);
+            
+
+            }
+            struct list_elem * tmp = list_prev(e);
+            list_remove(e);
+            e = tmp;
+            remove_spe(&thread_current()->spt, spe);
+        }
+        file_close(mmap_entry->file);
+        struct list_elem * tmp = list_prev(e);
+        list_remove(e);
+        e = tmp;
+        free(mmap_entry);
+        continue;
+    }
+    else if(mmap_entry->mapid == mapid)
+    {
+        for (struct list_elem* e = list_begin(&mmap_entry->spte_list); e != list_end(&mmap_entry->spte_list); e = list_next(e))
+        { //iterate through the spte_list, to free the pages
+            struct spt_entry *spe = list_entry(e, struct spt_entry, mmap_elem);
+            if (spe->is_loaded)
+            {
+                if (pagedir_is_dirty(thread_current()->pagedir, spe->vaddr))
+                {
+                    lock_acquire(&file_lock);
+                    file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
+                    lock_release(&file_lock);
+                    spe->is_loaded = false;
+                }
+                free_page(pagedir_get_page(thread_current()->pagedir, spe->vaddr));
+                pagedir_clear_page(thread_current()->pagedir, spe->vaddr);
+            }
+            struct list_elem * tmp = list_prev(e);
+            list_remove(e);
+            e = tmp;
+            remove_spe(&thread_current()->spt, spe);
+        }
+        file_close(mmap_entry->file);
+        list_remove(&mmap_entry->elem);
+        struct list_elem * tmp = list_prev(e);
+        list_remove(e);
+        e = tmp;
+        free(mmap_entry);
+        break;
+
+      
+    }
+  
+  }
+}
+
+
+
+
+
+void syscall_munmap(struct intr_frame *f)
+{
+  check_size(f->esp + 4, sizeof(int));
+  munmap(*(int *)(f->esp + 4));
 }

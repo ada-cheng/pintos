@@ -136,6 +136,9 @@ void exit(int status){
   thread_exit();
 }
 
+bool is_stack_access(int esp, int upage){
+ return (upage < PHYS_BASE) && (upage >= esp - 32) && (upage >= STK_MAX);
+ }
 
 static void
 page_fault (struct intr_frame *f) 
@@ -176,10 +179,20 @@ page_fault (struct intr_frame *f)
       
    
    struct spt_entry *spe = find_spe(fault_addr);
+ 
    if (!spe)
       {  
-         exit(-1);
-
+         if (!is_user_vaddr(fault_addr) || fault_addr < f->esp - 32 || fault_addr < STK_MAX)
+            exit(-1);
+         else
+         {
+            if (is_stack_access(f->esp,fault_addr))
+            {
+               stack_growth(fault_addr);
+            }
+            
+         }
+         return;
       }
    if (!page_fault_handle(spe)){
       printf("page fault handle failed\n");
